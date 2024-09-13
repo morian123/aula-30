@@ -3,8 +3,25 @@ const fsp = require("fs/promises");
 const path = require("path");
 
 const servidor = express();
-
 servidor.use(express.json());
+
+servidor.get("/arquivos", async (req, res) => {
+  try {
+    // Corrija o caminho para o diretório 'textos'
+    const caminhoDiretorio = path.join(__dirname, "textos");
+
+    // Lê o conteúdo da pasta 'textos'
+    const arquivos = await fsp.readdir(caminhoDiretorio);
+
+    // Filtra apenas arquivos .txt (opcional)
+    const arquivosTxt = arquivos.filter((arquivo) => arquivo.endsWith(".txt"));
+
+    res.status(200).json({ arquivos: arquivosTxt });
+  } catch (erro) {
+    console.error("Erro ao listar arquivos:", erro.message);
+    res.status(500).json({ erro: "Erro ao listar arquivos", detalhes: erro.message });
+  }
+});
 
 servidor.get("/arquivo", async (req, res) => {
   try {
@@ -13,7 +30,7 @@ servidor.get("/arquivo", async (req, res) => {
     if (nome) {
       // Garante que o nome do arquivo seja seguro
       const nomeArquivo = path.basename(nome);
-      const caminhoArquivo = path.join(__dirname, nomeArquivo + ".txt");
+      const caminhoArquivo = path.join(__dirname, "textos", nomeArquivo + ".txt"); // Inclui o caminho correto da pasta
 
       // Lê o conteúdo do arquivo
       let dados = await fsp.readFile(caminhoArquivo, "utf8");
@@ -48,54 +65,33 @@ servidor.get("/arquivo", async (req, res) => {
   }
 });
 
-
 servidor.put("/arquivo/:nome", async (req, res) => {
   try {
-    const { nome } = req.params; // Corrigido para pegar 'nome' corretamente
+    const { nome } = req.params;
     const { conteudo } = req.body;
 
     if (!nome) {
-      return res
-        .status(400)
-        .json({ erro: "Nome inválido: deve ser uma string não vazia." });
+      return res.status(400).json({ erro: "Nome inválido." });
     }
-
     if (!conteudo || typeof conteudo !== "string") {
-      return res
-        .status(400)
-        .json({ erro: "Conteúdo inválido: deve ser uma string não vazia." });
+      return res.status(400).json({ erro: "Conteúdo inválido." });
     }
 
     const nomeArquivo = path.basename(nome);
-    const caminhoArquivo = path.join(__dirname, "textos", nomeArquivo + ".txt"); // Define o caminho completo do arquivo
+    const caminhoArquivo = path.join(__dirname, "textos", nomeArquivo + ".txt");
 
-    let dadosExistentes;
+    let dadosExistentes = "";
     try {
-      dadosExistentes = await fs.readFile(caminhoArquivo, "utf8");
+      dadosExistentes = await fsp.readFile(caminhoArquivo, "utf8");
     } catch (erro) {
-      if (erro.code === "ENOENT") {
-        // Arquivo não encontrado, inicializa com string vazia
-        dadosExistentes = "";
-      } else {
-        throw erro; // Repassa outros erros
-      }
+      if (erro.code !== "ENOENT") throw erro;
     }
 
-    // Adiciona o novo conteúdo ao final do arquivo
-    await fs.writeFile(caminhoArquivo, `${dadosExistentes}\n${conteudo}`);
+    await fsp.writeFile(caminhoArquivo, `${dadosExistentes}\n${conteudo}`);
 
     res.json({ mensagem: "Conteúdo adicionado com sucesso." });
   } catch (erro) {
-    if (erro.code === "EACCES") {
-      res
-        .status(403)
-        .json({ erro: "Permissão negada ao tentar escrever no arquivo" });
-    } else {
-      console.error("Erro ao escrever no arquivo:", erro.message);
-      res
-        .status(500)
-        .json({ erro: "Erro ao processar o arquivo", detalhes: erro.message });
-    }
+    handleFileError(res, erro);
   }
 });
 
@@ -103,28 +99,23 @@ servidor.post("/arquivo", async (req, res) => {
   try {
     const { nome, conteudo } = req.body;
 
+    if (!nome) {
+      return res.status(400).json({ message: "Nome do arquivo é necessário." });
+    }
     if (!conteudo) {
-      return res.status(404).json({ message: "Conteúdo não encontrado" });
+      return res.status(400).json({ message: "Conteúdo não encontrado" });
     }
 
-    if (nome) {
-      const nomeArquivo = path.basename(nome);
-      const caminhoDiretorio = path.join(__dirname, "textos");
-      const caminhoArquivo = path.join(caminhoDiretorio, nomeArquivo + ".txt");
+    const nomeArquivo = path.basename(nome);
+    const caminhoDiretorio = path.join(__dirname, "textos");
+    const caminhoArquivo = path.join(caminhoDiretorio, nomeArquivo + ".txt");
 
-      // Cria o diretório se ele não existir
-      await fsp.mkdir(caminhoDiretorio, { recursive: true });
+    await fsp.mkdir(caminhoDiretorio, { recursive: true });
+    await fsp.writeFile(caminhoArquivo, conteudo);
 
-      await fsp.writeFile(caminhoArquivo, conteudo); // Usando fsp.writeFile para escrita de arquivo com Promises
-
-      return res.status(201).json({ mensagem: "Arquivo salvo com sucesso." });
-    }
-
-    return res.status(400).json({ message: "Nome do arquivo é necessário." });
+    return res.status(201).json({ mensagem: "Arquivo salvo com sucesso." });
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Algo deu errado", detalhes: error.message });
+    handleFileError(res, error);
   }
 });
 
@@ -139,19 +130,25 @@ servidor.delete("/arquivo/:nome", async (req, res) => {
     const nomeArquivo = path.basename(nome);
     const caminhoArquivo = path.join(__dirname, "textos", nomeArquivo + ".txt");
 
-    // Tenta remover o arquivo
     await fsp.rm(caminhoArquivo);
-
     return res.status(200).json({ message: "Arquivo removido com sucesso." });
   } catch (error) {
     if (error.code === "ENOENT") {
-      // Arquivo não encontrado
       return res.status(404).json({ message: "Arquivo não encontrado." });
     }
-    
-    res.status(500).json({ message: "Algo errado aconteceu", detalhes: error.message });
+    handleFileError(res, error);
   }
 });
 
+function handleFileError(res, erro) {
+  if (erro.code === "ENOENT") {
+    res.status(404).json({ erro: "Arquivo não encontrado" });
+  } else if (erro.code === "EACCES") {
+    res.status(403).json({ erro: "Permissão negada" });
+  } else {
+    console.error("Erro:", erro.message);
+    res.status(500).json({ erro: "Erro interno", detalhes: erro.message });
+  }
+}
 
 servidor.listen(3000, () => console.log("Servidor está rodando... 🔥"));
