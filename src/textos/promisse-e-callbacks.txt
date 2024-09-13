@@ -1,0 +1,28 @@
+# Guia Rápido sobre Promises e Callbacks
+
+## Callbacks
+
+**Callbacks** são funções passadas como argumentos para outras funções e são chamadas quando uma operação assíncrona é concluída. Eles são uma maneira tradicional de lidar com operações assíncronas em JavaScript.
+
+### Exemplo de Callback:
+
+```javascript
+const fs = require('fs');
+
+// Lê o conteúdo de um arquivo de forma assíncrona
+fs.readFile('exemplo.txt', 'utf8', (erro, dados) => {
+  if (erro) {
+    console.error('Erro ao ler o arquivo:', erro);
+    return;
+  }
+  console.log('Conteúdo do arquivo:', dados);
+});
+
+// Escreve o conteúdo em um arquivo de forma assíncrona
+fs.writeFile('exemplo.txt', 'Este é o novo conteúdo do arquivo', 'utf8', (erro) => {
+	if (erro) {
+		console.error('Erro ao escrever no arquivo:', erro);
+		return;
+	}
+	console.log('Conteúdo escrito com sucesso no arquivo!');
+});
